@@ -1,0 +1,215 @@
+---
+title: 'Homework 5:Tree'
+documentclass: ctexart
+output:
+  html_notebook: default
+  html_document:
+    df_print: paged
+    toc: yes
+  pdf_document: default
+  rticles::ctex:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+classoption: hyperref,
+---
+
+本次作业以Simulation为主,分别对supermarket_entry和来源于CGSS的数据，使用多个模型方法进行检验，并分别判断模型效果的优劣。
+
+# Simulation 1: Supermarket_entry
+
+本文使用“supermarket_entry”数据，数据样本容量为3142，分别建立Logistic Regression、Classification Tree、Random Forest以及Boosting等模型，探讨超市是否选择进入该市场的影响因素。
+
+```{r}
+library(caret)
+library(glmnet)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(nnet)
+library(gbm)
+rm(list=ls())
+data = read.csv("supermarket.csv")
+data$entry = as.factor(data$entry)
+dim(data)
+sum(data$entry==1)/nrow(data)
+```
+```{r}
+set.seed(123)
+train =  createDataPartition(data$entry,p=0.7,list=F)
+data_train = data[train,]
+data_test = data[-train,]
+ytrue = data_test$entry
+sum(data_train$entry==1)/nrow(data_train)
+sum(data_test$entry==1)/nrow(data_test) 
+```
+
+2.## 2.1 Logistic Regression
+
+```{r}
+fit = glm(entry~.,data_train,family="binomial")
+summary(fit)
+```
+```{r}
+# test err
+phat = predict(fit,data_test,type="response")
+yhat = as.numeric(phat > 0.5)
+table(ytrue,yhat)
+1-mean(yhat==ytrue)
+```
+
+## 1.2 Classification Tree 
+
+```{r}
+set.seed(100)
+fit0 = rpart(entry~.,data_train,control=rpart.control(cp=0))
+fit = prune(fit0,cp=fit0$cptable[which.min(fit0$cptable[,"xerror"]),"CP"])
+rpart.plot(fit,box.palette=list("Grays","Reds"))
+```
+```{r}
+# test err
+yhat = predict(fit,data_test,type="class") 
+1-mean(yhat==ytrue)
+```
+
+## 1.3 Random Forest
+
+```{r}
+set.seed(100)
+fit = randomForest(entry~.,data=data_train,mtry=5)
+
+# variable importance plot
+varImpPlot(fit)
+```
+
+## 1.4 Boosting
+
+```{r}
+set.seed(100)
+data_boost = transform(data_train,entry=as.numeric(entry)-1) 
+ntree = 5000
+fit = gbm(entry~.,data_boost, distribution="adaboost",
+          n.trees=ntree,interaction.depth=10,shrinkage=0.1)
+summary(fit)
+```
+```{r}
+# Partial dependence plots
+h1 = plot(fit,i="pop",return.grid=T)
+h2 = plot(fit,i="income25",return.grid=T)
+plot(h1$pop,h1$y,type="l",col="darkred",lwd=4,
+     xlim=c(100000,10098232),
+     xlab="pop",ylab="y")
+plot(h2$income25,h2$y,type="l",col="darkred",lwd=4,
+     xlim=c(6290,40721),
+     xlab="income25",ylab="y")
+```
+```{r}
+# test error
+phat = predict(fit,data_test,n.trees=ntree,type="response")
+yhat = as.numeric(phat>0.5) 
+1-mean(yhat==ytrue)
+```
+
+## 1.5 Comparision
+
+经过对比以上模型的失误率我们可以看出，Boosting模型效果表现最好，失误率仅为0.04569607。 
+
+# Simulation 2:Family planing
+
+本部分基于China General Soical Survey(CGSS)数据库，选用2818个样本量，从年龄、收入、社会满意度、拥有的住房套数等15个影响因素出发，探讨这些因素是如何影响人们看待政府干涉生育计划。同时，为提高模型的准确性，该部分将参照上文的做法，将采用4种模型，对人民态度进行预测。
+
+```{r}
+library(caret)
+library(glmnet)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(nnet)
+library(gbm)
+rm(list=ls())
+data = read.csv("hw.csv") # Polish  data
+data$Y = as.factor(data$Y)
+sum(data$Y==1)/nrow(data) # bankruptcy rate in data
+
+set.seed(123)
+train =  createDataPartition(data$Y,p=0.7,list=F)
+data_train = data[train,]
+data_test = data[-train,]
+ytrue = data_test$Y
+sum(data_train$Y==1)/nrow(data_train) # opinion in training data
+sum(data_test$Y==1)/nrow(data_test) # opinion in test data
+
+```
+
+## 2.1 Logistic Regression 
+
+```{r}
+fit = glm(Y~.,data_train,family="binomial")
+summary(fit)
+
+# test err
+phat = predict(fit,data_test,type="response")
+yhat = as.numeric(phat > 0.5)
+table(ytrue,yhat)
+1-mean(yhat==ytrue) #misclassification error rate
+```
+
+## 2.2  Classification Tree
+
+```{r}
+set.seed(100)
+fit0 = rpart(Y~.,data_train,control=rpart.control(cp=0))
+fit = prune(fit0,cp=fit0$cptable[which.min(fit0$cptable[,"xerror"]),"CP"])
+rpart.plot(fit,box.palette=list("Grays","Reds"))
+
+# test err
+yhat = predict(fit,data_test,type="class") 
+1-mean(yhat==ytrue) #misclassification error rate
+```
+
+## 2.3  Random Forest
+
+```{r}
+set.seed(100)
+fit = randomForest(Y~.,data=data_train,mtry=43)
+# variable importance plot
+varImpPlot(fit)
+```
+
+## 2.4 Boosting
+
+```{r}
+set.seed(100)
+data_boost = transform(data_train,Y=as.numeric(Y)-1) 
+ntree = 5000
+fit = gbm(Y~.,data_boost, distribution="adaboost",
+          n.trees=ntree,interaction.depth=10,shrinkage=0.1)
+summary(fit)
+```
+
+```{r}
+# Partial dependence plots
+h1 = plot(fit,i="X1",return.grid=T)
+h2 = plot(fit,i="X4",return.grid=T)
+plot(h1$X1,h1$y,type="l",col="darkred",lwd=4,
+     main="Age",
+     xlim=c(-3,2),
+     cex.main=2, cex.lab=1.25,
+     xlab="X1",ylab="y")
+plot(h2$X4,h2$y,type="l",col="darkred",lwd=4,
+     main="Household income",
+     xlim=c(-9,100),
+     cex.main=2, cex.lab=1.25,
+     xlab="X4",ylab="y")
+# test error
+phat = predict(fit,data_test,n.trees=ntree,type="response")
+yhat = as.numeric(phat>0.5) 
+1-mean(yhat==ytrue)
+```
+
+## 2.5 Comparision
+
+经过对比以上模型的失误率我们可以看出，logistic模型效果表现最好，失误率仅为0.4656398。
+
